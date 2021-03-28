@@ -63,6 +63,7 @@ def pairwise_interpolate_predictions(
         indexes_j,
         distance_interpolation_threshold: float = 1.0,
         nn_set_size: int = 4,
+        method='default'
 ):
     # Extract view information from input variables
     image_i, distances_i, points_i, pose_i, imaging_i = view_i
@@ -106,7 +107,6 @@ def pairwise_interpolate_predictions(
         # TODO: compute a flag indicating the possibility to interpolate
         #  by checking distance between `point_from_j` and its `point_from_j_nns`
         #  against the value of `distance_interpolation_threshold`
-        # distances_to_nearest = np.sqrt(((point_from_j - point_from_j_nns) ** 2).sum(1), axis=1)
         distances_to_nearest = np.linalg.norm(point_from_j[None, :] - point_from_j_nns, ord=2, axis=1)
         interp_mask[idx] = np.all(distances_to_nearest < distance_interpolation_threshold)
 
@@ -117,8 +117,23 @@ def pairwise_interpolate_predictions(
                 #  to construct a bilinear interpolator from distances predicted
                 #  in `view_i` (i.e. `distances_i`) into the point in `view_j`.
                 #  Use the interpolator to compute an interpolated distance value.
-                interpolator = interpolate.interp2d(point_from_j_nns[:, 0], point_from_j_nns[:, 1], distances_i_fl[point_nn_indexes])
-                distances_j_interp[idx] = interpolator(point_from_j[0], point_from_j[1])
+                if method == 'default':
+                    interpolator = interpolate.interp2d(point_from_j_nns[:, 0], point_from_j_nns[:, 1], distances_i_fl[point_nn_indexes])
+                    distances_j_interp[idx] = interpolator(point_from_j[0], point_from_j[1])
+                elif method == 'stable':
+                    distances_j_interp[idx] = interpolate.bisplev(
+                        point_from_j[0], 
+                        point_from_j[1],
+                        interpolate.bisplrep(
+                            point_from_j_nns[:, 0],
+                            point_from_j_nns[:, 1],
+                            distances_i_fl[point_nn_indexes],
+                            kx=1,
+                            ky=1
+                            )
+                    )
+                else:
+                    raise NotImplementedError('methods can be either "default" or "stable"')
 
             except ValueError as e:
                 print('Error while interpolating point {idx}:'
